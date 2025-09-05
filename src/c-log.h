@@ -62,12 +62,17 @@ extern "C" {
 #if !defined(CLOG_TIMER_UNIT_US)
 #    define CLOG_TIMER_UNIT_US "µs"
 #endif
+/* printf-style format checking (opt-in).
+   Define -DCLOG_FORMAT_CHECK=1 if you want compile-time format checking for literals. */
+#ifndef CLOG_FORMAT_CHECK
+#  define CLOG_FORMAT_CHECK 0
+#endif
 
 // printf-style format checking
-#if defined(__GNUC__) || defined(__clang__)
-#    define CLOG_PRINTF(A, B) __attribute__((format(printf, A, B)))
+#if CLOG_FORMAT_CHECK && (defined(__GNUC__) || defined(__clang__))
+#  define CLOG_PRINTF(A, B) __attribute__((format(printf, A, B)))
 #else
-#    define CLOG_PRINTF(A, B)
+#  define CLOG_PRINTF(A, B)
 #endif
 
 #if !defined(CLOG_LOCK_KIND)
