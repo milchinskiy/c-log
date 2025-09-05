@@ -9,6 +9,7 @@
 
 int main(void) {
     clog_set_level(CLOG_TRACE);
+    clog_banner();
     clog_set_fd(fileno(stderr));
 
     log_info("demo starting");

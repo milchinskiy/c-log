@@ -532,6 +532,35 @@ static inline int clog_write_all_(int fd, const char *p, size_t n) {
     return 0;
 }
 
+static inline void clog_write_line_raw_(const char *s) {
+    int    fd  = clog_fd_load_();
+    char  *buf = g_buf;  // reuse per-thread buffer
+    size_t cap = CLOG_LINE_MAX;
+
+    size_t i = 0;
+    if (s) {
+        for (; i + 1 < cap && s[i]; ++i) buf[i] = s[i];
+    }
+    if (i == 0 || buf[i - 1] != '\n') {
+        if (i + 1 < cap) {
+            buf[i++] = '\n';
+            buf[i]   = '\0';
+        } else {
+            buf[cap - 2] = '\n';
+            buf[cap - 1] = '\0';
+            i            = cap - 1;
+        }
+    }
+
+#    if CLOG_THREAD_SAFE
+    clog_lock_();
+    (void)clog_write_all_(fd, buf, i);
+    clog_unlock_();
+#    else
+    (void)clog_write_all_(fd, buf, i);
+#    endif
+}
+
 static inline void clog_emit_(
     clog_level lvl, const char *file, int line, const char *group, const char *fmt, va_list ap
 ) {
@@ -687,10 +716,13 @@ void clogp_timer_end_(const char *file, int line, const char *label) {
 // banner
 void clog_banner(void) {
 #    ifdef CLOG_BUILD
-    log_info_group("build", CLOG_BUILD);
+    char line[128];
+    (void)snprintf(line, sizeof line, "=== build: %s ===", CLOG_BUILD);
 #    else
-    log_info_group("logger", "ready");
+    char line[64];
+    (void)snprintf(line, sizeof line, "=== logger: ready ===");
 #    endif
+    clog_write_line_raw_(line);
 }
 
 int  clog_get_fd(void) { return clog_fd_load_(); }
