@@ -1,5 +1,12 @@
 #include "c-log.h"
 
+#if defined(_MSC_VER)
+  #define _CRT_SECURE_NO_WARNINGS
+  #define _CRT_NONSTDC_NO_DEPRECATE
+  #define fileno _fileno
+  #include <io.h>
+#endif
+
 int main(void) {
     clog_set_level(CLOG_TRACE);
     clog_set_fd(fileno(stderr));

@@ -545,8 +545,17 @@ static inline void clog_emit_(
         va_list ap2;
         va_copy(ap2, ap);
 
-        size_t avail = cap - off; /* size_t, not int */
-        int    n     = vsnprintf(buf + off, avail, fmt, ap2);
+        size_t avail = cap - off;
+        /* macOS/Clang (and GCC) fortify headers warn on non-literal formats.
+        We intentionally allow non-literals here */
+#    if defined(__clang__) || defined(__GNUC__)
+#        pragma GCC diagnostic push
+#        pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#    endif
+        int n = vsnprintf(buf + off, avail, fmt, ap2);
+#    if defined(__clang__) || defined(__GNUC__)
+#        pragma GCC diagnostic pop
+#    endif
         va_end(ap2);
 
         if (n > 0) {

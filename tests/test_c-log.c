@@ -34,6 +34,12 @@ static void sleep_ms_(int ms) {
 static void set_no_color_(void) { setenv("NO_COLOR", "1", 1); }
 #endif
 
+#if defined(_MSC_VER)
+  #include <BaseTsd.h>
+  typedef SSIZE_T ssize_t;
+  #include <io.h>
+#endif
+
 #include "c-log.h"  // interface only; impl compiled in src/c-log-impl.c
 
 // ------- tiny capture of stderr to memory (no files) -------
