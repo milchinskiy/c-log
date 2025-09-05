@@ -1,27 +1,26 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_NAME_OVERRIDE
-    ""
-    CACHE STRING "Override project name")
-set(PROJECT_VERSION_OVERRIDE
-    ""
-    CACHE STRING "Override project version")
+file(READ "${CMAKE_CURRENT_LIST_DIR}/project.toml" _PROJECT_TOML)
 
-if(PROJECT_NAME_OVERRIDE)
-  set(PROJ_NAME "${PROJECT_NAME_OVERRIDE}")
-else()
-  set(PROJ_NAME "c-log")
+# Extract name = "..." and version = "..." from TOML
+string(REGEX MATCH "name[ \t]*=[ \t]*\"([^\"]+)\"" _NAME_MATCH
+             "${_PROJECT_TOML}")
+set(PROJECT_NAME_FROM_TOML "${CMAKE_MATCH_1}")
+
+string(REGEX MATCH "version[ \t]*=[ \t]*\"([^\"]+)\"" _VER_MATCH
+             "${_PROJECT_TOML}")
+set(PROJECT_VERSION_FROM_TOML "${CMAKE_MATCH_1}")
+
+if(NOT PROJECT_NAME_FROM_TOML)
+  set(PROJECT_NAME_FROM_TOML "c-simple-osd")
 endif()
-
-if(PROJECT_VERSION_OVERRIDE)
-  set(PROJ_VER "${PROJECT_VERSION_OVERRIDE}")
-else()
-  set(PROJ_VER "0.1.0")
+if(NOT PROJECT_VERSION_FROM_TOML)
+  set(PROJECT_VERSION_FROM_TOML "0.1.0")
 endif()
 
 project(
-  ${PROJ_NAME}
-  VERSION ${PROJ_VER}
+  ${PROJECT_NAME_FROM_TOML}
+  VERSION ${PROJECT_VERSION_FROM_TOML}
   LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
@@ -62,7 +61,7 @@ option(CLOG_WITH_TID "Include (tid:...)" ON)
 option(CLOG_WITH_BUILD_IN_PREFIX
        "Append [build:...] each line if CLOG_BUILD is set" OFF)
 set(CLOG_BUILD
-    "${PROJ_NAME}-${PROJ_VER}"
+    "${PROJECT_NAME_FROM_TOML}_v${PROJECT_VERSION_FROM_TOML}"
     CACHE STRING "Build tag (default: <name>-<version>)")
 
 # ========= Library (single-header impl compiled once) =========

@@ -129,7 +129,6 @@ static inline int clog_isatty_fd_(int fd) {
 }
 #    endif
 #else
-#    include <fcntl.h>
 #    include <pthread.h>
 #    include <sys/stat.h>
 #    include <sys/time.h>
@@ -375,28 +374,23 @@ static inline void clog_unlock_(void) {}
 // Per-thread scratch (no heap)
 static CLOG_THREADLOCAL char g_buf[CLOG_LINE_MAX];
 
-// Timers (per-thread fixed slots)
+/* Timers (per-thread fixed slots) */
 typedef struct {
-    uint64_t key;
-    uint64_t t0;
+    uint64_t key, t0;
     bool     used;
 } clog_timer_slot_;
+#    if CLOG_TIMERS_MAX > 0
 static CLOG_THREADLOCAL clog_timer_slot_ g_timers[CLOG_TIMERS_MAX];
+#    endif
 
 // Colors (compile out when disabled)
 #    if CLOG_COLOR
 #        include <stdlib.h>
 #        define CLOG_ANSI_RESET "\x1b[0m"
 static inline const char *clog_level_color_(clog_level l) {
-    switch (l) {
-        case CLOG_TRACE: return "\x1b[90m";
-        case CLOG_DEBUG: return "\x1b[36m";
-        case CLOG_INFO:  return "\x1b[32m";
-        case CLOG_WARN:  return "\x1b[33m";
-        case CLOG_ERROR: return "\x1b[31m";
-        case CLOG_FATAL: return "\x1b[35m";
-        default:         return "";
-    }
+    static const char *cols[] = {"\x1b[90m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"};
+    unsigned           u      = (unsigned)l;
+    return u < (sizeof cols / sizeof cols[0]) ? cols[u] : "";
 }
 // Stateless: evaluate each time against current fd; still zero-alloc.
 static inline int clog_color_enabled_(void) {
@@ -428,15 +422,9 @@ static inline int clog_color_enabled_(void) { return 0; }
 
 // helpers
 static inline const char *clog_level_name_(clog_level l) {
-    switch (l) {
-        case CLOG_TRACE: return "TRACE";
-        case CLOG_DEBUG: return "DEBUG";
-        case CLOG_INFO:  return "INFO";
-        case CLOG_WARN:  return "WARN";
-        case CLOG_ERROR: return "ERROR";
-        case CLOG_FATAL: return "FATAL";
-        default:         return "?";
-    }
+    static const char *names[] = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
+    unsigned           u       = (unsigned)l;
+    return u < (sizeof names / sizeof names[0]) ? names[u] : "?";
 }
 static inline const char *clog_basename_(const char *p) {
     const char *s = p, *b = p;
@@ -462,13 +450,12 @@ static inline size_t clog_write_prefix_(
     const char *fname = clog_basename_(file);
 
     /* Optional pieces are built once into tiny buffers. Empty strings when disabled. */
-    char col_open[8] = "", col_close[5] = "";
+    const char *col_open  = "";
+    const char *col_close = "";
 #    if CLOG_COLOR
     if (clog_color_enabled_()) {
-        const char *c = clog_level_color_(lvl);
-        /* colors are fixed escape sequences; copy directly */
-        snprintf(col_open, sizeof col_open, "%s", c);
-        snprintf(col_close, sizeof col_close, "%s", CLOG_ANSI_RESET);
+        col_open  = clog_level_color_(lvl);
+        col_close = CLOG_ANSI_RESET;
     }
 #    endif
 
@@ -532,33 +519,41 @@ static inline int clog_write_all_(int fd, const char *p, size_t n) {
     return 0;
 }
 
-static inline void clog_write_line_raw_(const char *s) {
-    int    fd  = clog_fd_load_();
-    char  *buf = g_buf;  // reuse per-thread buffer
+/* ensure trailing '\n', then write [0..len) */
+static inline void clog_flush_line_(int fd, char *buf, size_t len) {
     size_t cap = CLOG_LINE_MAX;
+    size_t off = len;
 
-    size_t i = 0;
-    if (s) {
-        for (; i + 1 < cap && s[i]; ++i) buf[i] = s[i];
-    }
-    if (i == 0 || buf[i - 1] != '\n') {
-        if (i + 1 < cap) {
-            buf[i++] = '\n';
-            buf[i]   = '\0';
+    if (off == 0 || buf[off - 1] != '\n') {
+        if (off + 1 < cap) {
+            buf[off++] = '\n';
+            buf[off]   = '\0';
         } else {
             buf[cap - 2] = '\n';
             buf[cap - 1] = '\0';
-            i            = cap - 1;
+            off          = cap - 1;
         }
     }
 
 #    if CLOG_THREAD_SAFE
     clog_lock_();
-    (void)clog_write_all_(fd, buf, i);
+    (void)clog_write_all_(fd, buf, off);
     clog_unlock_();
 #    else
-    (void)clog_write_all_(fd, buf, i);
+    (void)clog_write_all_(fd, buf, off);
 #    endif
+}
+
+static inline void clog_write_line_raw_(const char *s) {
+    int    fd  = clog_fd_load_();
+    char  *buf = g_buf;  // reuse per-thread buffer
+    size_t cap = CLOG_LINE_MAX;
+
+    size_t i   = 0;
+    if (s) {
+        for (; i + 1 < cap && s[i]; ++i) buf[i] = s[i];
+    }
+    clog_flush_line_(fd, buf, i);
 }
 
 static inline void clog_emit_(
@@ -579,12 +574,12 @@ static inline void clog_emit_(
         size_t avail = cap - off;
         /* macOS/Clang (and GCC) fortify headers warn on non-literal formats.
         We intentionally allow non-literals here */
-#    if defined(__clang__) || defined(__GNUC__)
+#    if defined(__APPLE__)
 #        pragma GCC diagnostic push
 #        pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #    endif
         int n = vsnprintf(buf + off, avail, fmt, ap2);
-#    if defined(__clang__) || defined(__GNUC__)
+#    if defined(__APPLE__)
 #        pragma GCC diagnostic pop
 #    endif
         va_end(ap2);
@@ -600,31 +595,12 @@ static inline void clog_emit_(
         }
     }
 
-    size_t mlen = 3;
-    if (truncated && off + mlen < cap) {
-        const char *mark = "...";
-        memcpy(buf + off, mark, mlen);
-        off += mlen;
+    if (truncated && off + 3 < cap) {
+        memcpy(buf + off, "...", 3);
+        off += 3;
     }
 
-    if (off == 0 || buf[off - 1] != '\n') {
-        if (off + 1 < cap) {
-            buf[off++] = '\n';
-            buf[off]   = '\0';
-        } else {
-            buf[cap - 2] = '\n';
-            buf[cap - 1] = '\0';
-            off          = cap - 1;
-        }
-    }
-
-#    if CLOG_THREAD_SAFE
-    clog_lock_();
-    (void)clog_write_all_(fd, buf, off);
-    clog_unlock_();
-#    else
-    (void)clog_write_all_(fd, buf, off);
-#    endif
+    clog_flush_line_(fd, buf, off);
 
 #    if defined(_WIN32)
     if (lvl == CLOG_FATAL) { _commit(fd); }

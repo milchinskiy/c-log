@@ -18,7 +18,7 @@
 
     eachSystem = nixpkgs.lib.genAttrs supportedSystems (
       system: let
-        meta = import ./project.nix;
+        meta = nixpkgs.lib.importTOML ./project.toml;
         pkgs = nixpkgs.legacyPackages.${system};
         nativeBuildInputs = with pkgs; [
           llvmPackages_latest.clang-tools
@@ -44,22 +44,20 @@
           shellHook = ''
             export CC=clang
             export CXX=clang++
-            echo "Project: ${meta.pname} ${meta.version}"
+            echo "Project: ${meta.project.name} ${meta.project.version}"
             clang --version
           '';
         };
 
         package = pkgs.stdenv.mkDerivation {
           inherit nativeBuildInputs buildInputs;
-          pname = meta.pname;
-          version = meta.version;
+          pname = meta.project.name;
+          version = meta.project.version;
           src = self;
 
           cmakeFlags = [
             "-DCMAKE_BUILD_TYPE=Release"
             "-DCMAKE_C_COMPILER=clang"
-            "-DPROJECT_NAME_OVERRIDE=${meta.pname}"
-            "-DPROJECT_VERSION_OVERRIDE=${meta.version}"
           ];
 
           doCheck = true;
