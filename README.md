@@ -3,7 +3,7 @@
 > Single‑header logger with colors, file:line, groups & timers.  
 > Include the header everywhere; in **exactly one** `.c` file `#define CLOG_IMPLEMENTATION` before including.
 
-- Repo: https://github.com/milchinskiy/c-log
+- Repo: <https://github.com/milchinskiy/c-log>
 - License: MIT
 - Languages: C (C99+), C++ compatible
 - Platforms: Linux, macOS, Windows
@@ -21,9 +21,9 @@
 - [Thread safety & locking](#thread-safety--locking)
 - [Colors](#colors)
 - [Runtime controls](#runtime-controls)
-- [Compile‑time options](#compile-time-options)
+- [Compile‑time options](#compiletime-options)
   - [Feature toggles](#feature-toggles)
-  - [Levels: runtime vs compile‑time](#levels-runtime-vs-compile-time)
+  - [Levels: runtime vs compile‑time](#levels-runtime-vs-compiletime)
   - [Locking choices](#locking-choices)
   - [Formatting/prefix options](#formattingprefix-options)
   - [Timer behavior](#timer-behavior)
@@ -73,11 +73,13 @@ int main(void) {
 ```
 
 **Build (POSIX):**
+
 ```bash
 cc -std=c11 -O2 main.c -lpthread -o demo
 ```
 
 **Build (Windows, MSVC):**
+
 ```bat
 cl /O2 /std:c11 main.c
 ```
@@ -103,6 +105,7 @@ void clogp_timer_end_(const char *file, int line, const char *label);
 ```
 
 ### Types
+
 ```c
 typedef enum { CLOG_TRACE = 0, CLOG_DEBUG, CLOG_INFO, CLOG_WARN, CLOG_ERROR, CLOG_FATAL } clog_level;
 ```
@@ -147,6 +150,7 @@ Use the `*_group("net", "...")` variants to set the group string.
 Timers are **call‑site aware** and require **no allocations**. You can time a labeled section using either explicit `start/end` or the scope helper.
 
 ### Explicit
+
 ```c
 clog_start_time("load assets");
 // ... work ...
@@ -154,6 +158,7 @@ clog_end_time("load assets");  // emits at DEBUG level
 ```
 
 ### Scope helper
+
 ```c
 CLOG_SCOPE_TIME("parse file") {
     // ... work ...
@@ -251,9 +256,11 @@ You can define these macros at compile time (e.g., `-DNAME=value`) **before** in
 ### Formatting/prefix options
 
 Prefix format is:
+
 ```
 YYYY-MM-DD HH:MM:SS.mmm [LEVEL] (tid:123) <file:line> [group?] [build:?] message...
 ```
+
 - `file:line` can be disabled with `CLOG_WITH_LINE=0` (then just `[file]`).
 - Thread id formatting can be short with `CLOG_TID_SHORT=1` → `(t#XXXXXX)`.
 - A build tag may be present if both `CLOG_WITH_BUILD_IN_PREFIX=1` and `CLOG_BUILD="..."` are defined.
@@ -298,6 +305,7 @@ if (fd >= 0) {
 ## Typical outputs
 
 **TTY (colorized)**:
+
 ```
 2025-09-05 10:15:00.123 [INFO]  (tid:4242) <main.c:10> logger ready
 2025-09-05 10:15:00.125 [WARN]  (tid:4243) <net.c:88> [net] reconnect in 200 ms
@@ -305,20 +313,19 @@ if (fd >= 0) {
 ```
 
 **Plain (no color)**:
+
 ```
 2025-09-05 10:15:00.123 [INFO] (tid:4242) <main.c:10> logger ready
 ```
 
-When a message exceeds `CLOG_LINE_MAX`, it is truncated and tagged:
-```
-...
-```
+When a message exceeds `CLOG_LINE_MAX`, it is truncated and tagged: `...`
 
 ---
 
 ## Build notes & integration
 
 ### Single‑header pattern
+
 Include `c-log.h` everywhere. In **exactly one** translation unit:
 
 ```c
@@ -343,10 +350,12 @@ endif()
 ```
 
 ### Toolchains
+
 - **GCC/Clang**: supports `__attribute__((format(printf,...)))` for format checking.
 - **MSVC**: format checking attribute is ignored (harmless).
 
 ### Notes
+
 - On older glibc, you might need `-lrt` for `clock_gettime`. Modern toolchains don’t.
 - Not async‑signal‑safe (uses `snprintf`, locks, etc.). Avoid calling from signal handlers.
 
@@ -355,23 +364,29 @@ endif()
 ## FAQ
 
 **How do I disable colors in CI?**  
+
 - Set the environment variable: `NO_COLOR=1`.  
 - Or compile with `-DCLOG_COLOR=0`.  
 - Or redirect output to a non‑TTY (colors auto‑disable unless `CLOG_COLOR_FORCE=1`).
 
 **Why doesn’t my timer print?**  
+
 - Timers emit at `CLOG_DEBUG`. Ensure both `clog_set_level(CLOG_DEBUG)` (runtime) **and** `CLOG_COMPILETIME_MIN_LEVEL <= CLOG_DEBUG` (compile‑time).
 
 **Can I log to stdout instead of stderr?**  
+
 - Yes: `clog_set_fd(1);` (stdout). Default is `2` (stderr).
 
 **What happens on partial writes or EINTR?**  
+
 - The logger retries until all bytes are written (handles `EINTR`).
 
 **Is it safe to use in multiple threads?**  
+
 - Yes, when `CLOG_THREAD_SAFE=1` (default). Set `CLOG_LOCK_KIND` per your needs.
 
 **Can I add my build id to every line?**  
+
 - Define `-DCLOG_WITH_BUILD_IN_PREFIX=1 -DCLOG_BUILD="\"v1.2.3\""`.
 
 ---
@@ -386,29 +401,42 @@ MIT — see [LICENSE](LICENSE).
 
 ```text
 Levels
-  Runtime:    clog_set_level(CLOG_TRACE|DEBUG|INFO|WARN|ERROR|FATAL)
-  Compile:    -DCLOG_MIN_LEVEL=CLOG_WARN   (elide below WARN)
-  Default:    -DCLOG_LEVEL=CLOG_DEBUG      (runtime default)
+  Runtime:     clog_set_level(CLOG_TRACE|CLOG_DEBUG|CLOG_INFO|CLOG_WARN|CLOG_ERROR|CLOG_FATAL)
+  Compile (elide):  -DCLOG_MIN_LEVEL=CLOG_WARN        // strips calls below WARN at compile time
+  Default runtime:  -DCLOG_LEVEL=CLOG_DEBUG           // startup threshold
 
 Colors
-  Enable:     -DCLOG_COLOR=1               (default)
-  Force:      -DCLOG_COLOR_FORCE=1
-  Disable:    -DCLOG_COLOR=0  or NO_COLOR=1
+  Enable:      -DCLOG_COLOR=1                         // default
+  Force TTY:   -DCLOG_COLOR_FORCE=1                   // enable even if not a TTY
+  Disable:     -DCLOG_COLOR=0  or NO_COLOR=1          // env var wins
 
-Prefix
-  File:line:  -DCLOG_WITH_LINE=1           (default)
-  TID:        -DCLOG_WITH_TID=1            (default), -DCLOG_TID_SHORT=1 for hex
-  UTC:        -DCLOG_TIME_UTC=1
-  Build tag:  -DCLOG_WITH_BUILD_IN_PREFIX=1 -DCLOG_BUILD="\"hash\""
+Prefix (order: timestamp [LEVEL]  build?  tid?  <file:line>  group?)
+  File:line:   -DCLOG_WITH_LINE=1                     // default (prints as <file:line>)
+  Thread id:   -DCLOG_WITH_TID=1                      // default
+               -DCLOG_TID_SHORT=1                     // hex short form (t#XXXXXX)
+  UTC time:    -DCLOG_TIME_UTC=1
+  Build tag:   -DCLOG_WITH_BUILD_IN_PREFIX=1 -DCLOG_BUILD="\"hash\""  // emits [build:hash]
 
 Locking
-  Thread‑safe: -DCLOG_THREAD_SAFE=1        (default)
-  Kind:        -DCLOG_LOCK_KIND=2|1|0
-  Spin iters:  -DCLOG_SPIN_ITERS=100
+  Thread-safe: -DCLOG_THREAD_SAFE=1                   // default
+  Kind:        -DCLOG_LOCK_KIND=2|1|0                 // 2=mutex (default), 1=spin, 0=none
+  Spin loops:  -DCLOG_SPIN_ITERS=100                  // only for KIND=1
 
 Buffers & timers
-  Line max:    -DCLOG_LINE_MAX=1024
-  Timers max:  -DCLOG_TIMERS_MAX=16
-  Units:       -DCLOG_TIMER_UNIT_US="\"us\""
-  Thresholds:  -DCLOG_TIMER_NS_MAX=1000 -DCLOG_TIMER_US_MAX=1000000 -DCLOG_TIMER_MS_MAX=1000000000
+  Line size:   -DCLOG_LINE_MAX=1024
+  Timers:      -DCLOG_TIMERS_MAX=16                   // per-thread fixed slots
+               0 => timers become no-ops (API intact)
+  Units:       -DCLOG_TIMER_UNIT_US="\"us\""          // default is "µs"
+  Ranges:      -DCLOG_TIMER_NS_MAX=1000
+               -DCLOG_TIMER_US_MAX=1000000
+               -DCLOG_TIMER_MS_MAX=1000000000
+
+Format checking (opt-in)
+  Enable GCC/Clang printf checks for literals:
+               -DCLOG_FORMAT_CHECK=1
+  (Default is 0 so variable format strings like `const char* f=...; log_info(f, ...)` won’t warn.)
+
+Banner
+  clog_banner(): prints a header line without prefix/level (e.g., "=== build: <tag> ===" or "=== logger: ready ===")
+  — always shown, independent of current log level.
 ```
