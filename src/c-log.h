@@ -65,14 +65,14 @@ extern "C" {
 /* printf-style format checking (opt-in).
    Define -DCLOG_FORMAT_CHECK=1 if you want compile-time format checking for literals. */
 #ifndef CLOG_FORMAT_CHECK
-#  define CLOG_FORMAT_CHECK 0
+#    define CLOG_FORMAT_CHECK 0
 #endif
 
 // printf-style format checking
 #if CLOG_FORMAT_CHECK && (defined(__GNUC__) || defined(__clang__))
-#  define CLOG_PRINTF(A, B) __attribute__((format(printf, A, B)))
+#    define CLOG_PRINTF(A, B) __attribute__((format(printf, A, B)))
 #else
-#  define CLOG_PRINTF(A, B)
+#    define CLOG_PRINTF(A, B)
 #endif
 
 #if !defined(CLOG_LOCK_KIND)
@@ -458,59 +458,56 @@ static inline size_t clog_write_prefix_(
 ) {
     int Y, m, d, H, M, S, ms;
     clog_localtime_parts_(&Y, &m, &d, &H, &M, &S, &ms);
+
     const char *fname = clog_basename_(file);
-    size_t      pos   = 0;
 
-    /* Helper to append formatted text into dst using a size_t cursor. */
-#    define CLOG_APPEND(fmt, ...)                                                 \
-        do {                                                                      \
-            if (pos < cap) {                                                      \
-                size_t avail = cap - pos;                                         \
-                int    r     = snprintf(dst + pos, avail, fmt, __VA_ARGS__);      \
-                if (r > 0) {                                                      \
-                    size_t rr = (size_t)r;                                        \
-                    /* Advance by what fit (avail includes space for the NUL). */ \
-                    pos += (rr < avail ? rr : (avail ? avail - 1 : 0));           \
-                }                                                                 \
-            }                                                                     \
-        } while (0)
-
-    CLOG_APPEND("%04d-%02d-%02d %02d:%02d:%02d.%03d ", Y, m, d, H, M, S, ms);
-
+    /* Optional pieces are built once into tiny buffers. Empty strings when disabled. */
+    char col_open[8] = "", col_close[5] = "";
+#    if CLOG_COLOR
     if (clog_color_enabled_()) {
         const char *c = clog_level_color_(lvl);
-        CLOG_APPEND("[%s%s%s]\t", c, clog_level_name_(lvl), CLOG_ANSI_RESET);
-    } else {
-        CLOG_APPEND("[%s]\t", clog_level_name_(lvl));
+        /* colors are fixed escape sequences; copy directly */
+        snprintf(col_open, sizeof col_open, "%s", c);
+        snprintf(col_close, sizeof col_close, "%s", CLOG_ANSI_RESET);
     }
+#    endif
 
+    char where[64];
+#    if CLOG_WITH_LINE
+    snprintf(where, sizeof where, "<%s:%d> ", fname, line);
+#    else
+    snprintf(where, sizeof where, "<%s> ", fname);
+#    endif
+
+    char tidbuf[32] = "";
+#    if CLOG_WITH_TID
+#        if CLOG_TID_SHORT
+    snprintf(tidbuf, sizeof tidbuf, "(t#%06lx) ", clog_tid_() & 0xFFFFFFul);
+#        else
+    snprintf(tidbuf, sizeof tidbuf, "(tid:%lu) ", clog_tid_());
+#        endif
+#    endif
+
+    char buildbuf[48] = "";
 #    if CLOG_WITH_BUILD_IN_PREFIX
 #        ifdef CLOG_BUILD
-    CLOG_APPEND("[build:%s] ", CLOG_BUILD);
+    snprintf(buildbuf, sizeof buildbuf, "[build:%s] ", CLOG_BUILD);
 #        endif
 #    endif
 
-#    if CLOG_WITH_TID
-    unsigned long tid = clog_tid_();
-#        if CLOG_TID_SHORT
-    CLOG_APPEND("(t#%06lx) ", tid & 0xFFFFFFul);
-#        else
-    CLOG_APPEND("(tid:%lu) ", tid);
-#        endif
-#    endif
+    char groupbuf[64] = "";
+    if (group && *group) snprintf(groupbuf, sizeof groupbuf, "[%s] ", group);
 
-#    if CLOG_WITH_LINE
-    CLOG_APPEND("<%s:%d> ", fname, line);
-#    else
-    CLOG_APPEND("<%s> ", fname);
-#    endif
+    /* One shot. Truncation is fine; caller will add newline and [TRUNC]/... if needed. */
+    const char *lvlname = clog_level_name_(lvl);
+    int         n       = snprintf(
+        dst, cap, "%04d-%02d-%02d %02d:%02d:%02d.%03d [%s%s%s]\t%s%s%s%s", Y, m, d, H, M, S, ms, col_open, lvlname,
+        col_close, buildbuf, tidbuf, where, groupbuf
+    );
 
-    if (group && *group) { CLOG_APPEND("[%s] ", group); }
-
-#    undef CLOG_APPEND
-
-    if (pos >= cap) return cap;
-    return pos;
+    if (n < 0) return 0;
+    size_t nn = (size_t)n;
+    return nn >= cap ? cap : nn;
 }
 
 static inline int clog_write_all_(int fd, const char *p, size_t n) {
@@ -632,6 +629,21 @@ static inline int clog_timer_free_slot_(void) {
         if (!g_timers[i].used) return i;
     return -1;
 }
+
+#    if CLOG_TIMERS_MAX == 0
+/* No-op implementations; keep API stable. */
+void clogp_timer_start_(const char *file, int line, const char *label) {
+    (void)file;
+    (void)line;
+    (void)label;
+}
+void clogp_timer_end_(const char *file, int line, const char *label) {
+    (void)file;
+    (void)line;
+    (void)label;
+}
+/* CLOG_SCOPE_TIME still compiles and executes body once, just without timing. */
+#    else
 void clogp_timer_start_(const char *file, int line, const char *label) {
     (void)file;
     (void)line;
@@ -670,13 +682,14 @@ void clogp_timer_end_(const char *file, int line, const char *label) {
         clog_log_file_line_(CLOG_DEBUG, file, line, "timer", "[%.6f s]: %s", s, label);
     }
 }
+#    endif
 
 // banner
 void clog_banner(void) {
 #    ifdef CLOG_BUILD
-    log_info_group("clog", "build: %s", CLOG_BUILD);
+    log_info_group("build", CLOG_BUILD);
 #    else
-    log_info_group("clog", "logger ready");
+    log_info_group("logger", "ready");
 #    endif
 }
 
