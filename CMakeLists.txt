@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_NAME_OVERRIDE "" CACHE STRING "Override project name")
-set(PROJECT_VERSION_OVERRIDE "" CACHE STRING "Override project version")
+set(PROJECT_NAME_OVERRIDE
+    ""
+    CACHE STRING "Override project name")
+set(PROJECT_VERSION_OVERRIDE
+    ""
+    CACHE STRING "Override project version")
 
 if(PROJECT_NAME_OVERRIDE)
   set(PROJ_NAME "${PROJECT_NAME_OVERRIDE}")
@@ -15,7 +19,10 @@ else()
   set(PROJ_VER "0.1.0")
 endif()
 
-project(${PROJ_NAME} VERSION ${PROJ_VER} LANGUAGES C)
+project(
+  ${PROJ_NAME}
+  VERSION ${PROJ_VER}
+  LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -23,26 +30,46 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(MSVC)
   add_compile_options(/W4)
 else()
-  add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+  add_compile_options(
+    -fstack-protector-strong
+    -fno-common
+    -Wformat=2
+    -Wformat-truncation
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+    -Wstrict-prototypes
+    -Wvla
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror)
 endif()
 
 # ========= Options that map to c-log.h flags =========
-set(CLOG_DEFAULT_LEVEL "CLOG_INFO" CACHE STRING "Runtime default level (e.g. CLOG_WARN or 3)")
-set(CLOG_MIN_LEVEL "" CACHE STRING "Compile-time minimum (e.g. CLOG_WARN or 3); empty keeps all")
+set(CLOG_DEFAULT_LEVEL
+    "CLOG_INFO"
+    CACHE STRING "Runtime default level (e.g. CLOG_WARN or 3)")
+set(CLOG_MIN_LEVEL
+    ""
+    CACHE STRING "Compile-time minimum (e.g. CLOG_WARN or 3); empty keeps all")
 
 option(CLOG_THREAD_SAFE "Spinlock to serialize writes" ON)
 option(CLOG_COLOR "ANSI colors when stderr is a TTY" ON)
 option(CLOG_COLOR_FORCE "Force color even if not a TTY" OFF)
 option(CLOG_WITH_LINE "Include [file:line]" ON)
 option(CLOG_WITH_TID "Include (tid:...)" ON)
-option(CLOG_WITH_BUILD_IN_PREFIX "Append [build:...] each line if CLOG_BUILD is set" OFF)
-set(CLOG_BUILD "${PROJ_NAME}-${PROJ_VER}" CACHE STRING "Build tag (default: <name>-<version>)")
+option(CLOG_WITH_BUILD_IN_PREFIX
+       "Append [build:...] each line if CLOG_BUILD is set" OFF)
+set(CLOG_BUILD
+    "${PROJ_NAME}-${PROJ_VER}"
+    CACHE STRING "Build tag (default: <name>-<version>)")
 
 # ========= Library (single-header impl compiled once) =========
 add_library(c_log STATIC src/c-log-impl.c)
-target_include_directories(c_log PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src   # for "c-log.h"
-  ${CMAKE_CURRENT_SOURCE_DIR}       # optional
+target_include_directories(
+  c_log PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src # for "c-log.h"
+               ${CMAKE_CURRENT_SOURCE_DIR} # optional
 )
 set_target_properties(c_log PROPERTIES OUTPUT_NAME "c-log" C_STANDARD 11)
 
@@ -62,7 +89,8 @@ function(apply_bool_def target name enabled)
 endfunction()
 
 # Apply compile defs to the lib
-target_compile_definitions(c_log PUBLIC CLOG_DEFAULT_LEVEL=${CLOG_DEFAULT_LEVEL})
+target_compile_definitions(c_log
+                           PUBLIC CLOG_DEFAULT_LEVEL=${CLOG_DEFAULT_LEVEL})
 if(NOT "${CLOG_MIN_LEVEL}" STREQUAL "")
   target_compile_definitions(c_log PUBLIC CLOG_MIN_LEVEL=${CLOG_MIN_LEVEL})
 endif()
@@ -93,9 +121,9 @@ add_test(NAME c-log-tests COMMAND c-log-tests)
 set_tests_properties(c-log-tests PROPERTIES ENVIRONMENT "NO_COLOR=1")
 
 # ========= Install =========
-install(TARGETS c_log c-log-demo c-log-tests
+install(
+  TARGETS c_log c-log-demo c-log-tests
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-)
+  LIBRARY DESTINATION lib)
 install(FILES src/c-log.h DESTINATION include)

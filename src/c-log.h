@@ -17,7 +17,6 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
 #if !defined(CLOG_THREAD_SAFE)
@@ -213,8 +212,9 @@ void clogp_timer_end_(const char *file, int line, const char *label);
 void clog_banner(void);
 
 // internal front-ends
-void clog_log_file_line_(clog_level lvl, const char *file, int line, const char *group, const char *fmt, ...)
-    CLOG_PRINTF(5, 6);
+void clog_log_file_line_(
+    clog_level lvl, const char *file, int line, const char *group, const char *fmt, ...
+) CLOG_PRINTF(5, 6);
 void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char *group, const char *fmt, va_list ap);
 
 #if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_TRACE
@@ -278,19 +278,39 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 
 // --- Atomics shim for state (dedupe) ---
 #    ifndef CLOG_HAVE_ATOMICS
-#        if !defined(__STDC_NO_ATOMICS__) && (defined(__GNUC__) || defined(__clang__))
-#            define CLOG_HAVE_ATOMICS 1
+#        if defined(__cplusplus)
+#            define CLOG_HAVE_ATOMICS 1 /* use <atomic> in C++ */
+#        elif !defined(__STDC_NO_ATOMICS__) && (defined(__GNUC__) || defined(__clang__))
+#            define CLOG_HAVE_ATOMICS 1 /* C11 atomics on GCC/Clang */
 #        else
 #            define CLOG_HAVE_ATOMICS 0
 #        endif
 #    endif
+
 #    if CLOG_HAVE_ATOMICS
-#        include <stdatomic.h>
-#        define CLOG_STATE_INT(name, init)                                                                       \
-            static atomic_int  name = ATOMIC_VAR_INIT(init);                                                     \
-            static inline int  name##_load(void) { return atomic_load_explicit(&(name), memory_order_relaxed); } \
-            static inline void name##_store(int v) { atomic_store_explicit(&(name), v, memory_order_relaxed); }
+#        if defined(__cplusplus)
+/* --- C++ path: use <atomic> --- */
+#            include <atomic>
+using clog_atomic_int_ = std::atomic<int>;
+#            define CLOG_STATE_INT(name, init)                                                             \
+                static clog_atomic_int_ name{(init)};                                                      \
+                static inline int       name##_load(void) { return name.load(std::memory_order_relaxed); } \
+                static inline void      name##_store(int v) { name.store(v, std::memory_order_relaxed); }
+#        else
+/* --- C11 path: use <stdatomic.h> --- */
+#            include <stdatomic.h>
+/* Some libcs don’t define ATOMIC_VAR_INIT; identity fallback is correct for constants */
+#            ifndef ATOMIC_VAR_INIT
+#                define ATOMIC_VAR_INIT(x) (x)
+#            endif
+typedef atomic_int clog_atomic_int_;
+#            define CLOG_STATE_INT(name, init)                                                                       \
+                static clog_atomic_int_ name = ATOMIC_VAR_INIT(init);                                                \
+                static inline int  name##_load(void) { return atomic_load_explicit(&(name), memory_order_relaxed); } \
+                static inline void name##_store(int v) { atomic_store_explicit(&(name), v, memory_order_relaxed); }
+#        endif
 #    else
+/* --- Fallback: non-atomic ints --- */
 #        define CLOG_STATE_INT(name, init)                        \
             static int         name = (init);                     \
             static inline int  name##_load(void) { return name; } \
@@ -360,6 +380,7 @@ static CLOG_THREADLOCAL clog_timer_slot_ g_timers[CLOG_TIMERS_MAX];
 
 // Colors (compile out when disabled)
 #    if CLOG_COLOR
+#        include <stdlib.h>
 #        define CLOG_ANSI_RESET "\x1b[0m"
 static inline const char *clog_level_color_(clog_level l) {
     switch (l) {
@@ -433,36 +454,58 @@ static inline size_t clog_write_prefix_(
     int Y, m, d, H, M, S, ms;
     clog_localtime_parts_(&Y, &m, &d, &H, &M, &S, &ms);
     const char *fname = clog_basename_(file);
-    int         n     = 0;
-    n += snprintf(dst + n, (int)(cap - n), "%04d-%02d-%02d %02d:%02d:%02d.%03d ", Y, m, d, H, M, S, ms);
+    size_t      pos   = 0;
+
+    /* Helper to append formatted text into dst using a size_t cursor. */
+#    define CLOG_APPEND(fmt, ...)                                                 \
+        do {                                                                      \
+            if (pos < cap) {                                                      \
+                size_t avail = cap - pos;                                         \
+                int    r     = snprintf(dst + pos, avail, fmt, __VA_ARGS__);      \
+                if (r > 0) {                                                      \
+                    size_t rr = (size_t)r;                                        \
+                    /* Advance by what fit (avail includes space for the NUL). */ \
+                    pos += (rr < avail ? rr : (avail ? avail - 1 : 0));           \
+                }                                                                 \
+            }                                                                     \
+        } while (0)
+
+    CLOG_APPEND("%04d-%02d-%02d %02d:%02d:%02d.%03d ", Y, m, d, H, M, S, ms);
+
     if (clog_color_enabled_()) {
         const char *c = clog_level_color_(lvl);
-        n += snprintf(dst + n, (int)(cap - n), "[%s%s%s] ", c, clog_level_name_(lvl), CLOG_ANSI_RESET);
+        CLOG_APPEND("[%s%s%s]\t", c, clog_level_name_(lvl), CLOG_ANSI_RESET);
     } else {
-        n += snprintf(dst + n, (int)(cap - n), "[%s] ", clog_level_name_(lvl));
+        CLOG_APPEND("[%s]\t", clog_level_name_(lvl));
     }
-#    if CLOG_WITH_LINE
-    n += snprintf(dst + n, (int)(cap - n), "[%s:%d] ", fname, line);
-#    else
-    n += snprintf(dst + n, (int)(cap - n), "[%s] ", fname);
+
+#    if CLOG_WITH_BUILD_IN_PREFIX
+#        ifdef CLOG_BUILD
+    CLOG_APPEND("[build:%s] ", CLOG_BUILD);
+#        endif
 #    endif
+
 #    if CLOG_WITH_TID
     unsigned long tid = clog_tid_();
 #        if CLOG_TID_SHORT
-    n += snprintf(dst + n, (int)(cap - n), "(t#%06lx) ", tid & 0xFFFFFFul);
+    CLOG_APPEND("(t#%06lx) ", tid & 0xFFFFFFul);
 #        else
-    n += snprintf(dst + n, (int)(cap - n), "(tid:%lu) ", tid);
+    CLOG_APPEND("(tid:%lu) ", tid);
 #        endif
 #    endif
-    if (group && *group) n += snprintf(dst + n, (int)(cap - n), "[%s] ", group);
-#    if CLOG_WITH_BUILD_IN_PREFIX
-#        ifdef CLOG_BUILD
-    n += snprintf(dst + n, (int)(cap - n), "[build:%s] ", CLOG_BUILD);
-#        endif
+
+#    if CLOG_WITH_LINE
+    CLOG_APPEND("<%s:%d> ", fname, line);
+#    else
+    CLOG_APPEND("<%s> ", fname);
 #    endif
-    if (n < 0) return 0;
-    if ((size_t)n >= cap) return cap;
-    return (size_t)n;
+
+    if (group && *group) { CLOG_APPEND("[%s] ", group); }
+
+#    undef CLOG_APPEND
+
+    if (pos >= cap) return cap;
+    return pos;
 }
 
 static inline int clog_write_all_(int fd, const char *p, size_t n) {
@@ -491,31 +534,39 @@ static inline void clog_emit_(
     clog_level lvl, const char *file, int line, const char *group, const char *fmt, va_list ap
 ) {
     if ((int)lvl < clog_lvl_load_()) return;
+
     int    fd        = clog_fd_load_();
     char  *buf       = g_buf;
     size_t cap       = CLOG_LINE_MAX;
     size_t off       = clog_write_prefix_(buf, cap, lvl, file, line, group);
     bool   truncated = false;
+
     if (off < cap) {
         va_list ap2;
         va_copy(ap2, ap);
-        int n = vsnprintf(buf + off, (int)(cap - off), fmt, ap2);
+
+        size_t avail = cap - off; /* size_t, not int */
+        int    n     = vsnprintf(buf + off, avail, fmt, ap2);
         va_end(ap2);
+
         if (n > 0) {
-            if (n >= (int)(cap - off)) {
-                off       = cap - 1;
+            size_t nn = (size_t)n;
+            if (nn >= avail) {
+                off       = cap - 1; /* keep last byte for '\0' */
                 truncated = true;
             } else {
-                off += (size_t)n;
+                off += nn;
             }
         }
     }
-    if (truncated && off + 8 < cap) {
-        const char *mark = " [TRUNC]";
-        size_t      mlen = 8;
+
+    size_t mlen = 3;
+    if (truncated && off + mlen < cap) {
+        const char *mark = "...";
         memcpy(buf + off, mark, mlen);
         off += mlen;
     }
+
     if (off == 0 || buf[off - 1] != '\n') {
         if (off + 1 < cap) {
             buf[off++] = '\n';
@@ -526,6 +577,7 @@ static inline void clog_emit_(
             off          = cap - 1;
         }
     }
+
 #    if CLOG_THREAD_SAFE
     clog_lock_();
     (void)clog_write_all_(fd, buf, off);
@@ -533,6 +585,7 @@ static inline void clog_emit_(
 #    else
     (void)clog_write_all_(fd, buf, off);
 #    endif
+
 #    if defined(_WIN32)
     if (lvl == CLOG_FATAL) { _commit(fd); }
 #    else

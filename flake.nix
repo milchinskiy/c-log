@@ -21,9 +21,10 @@
         meta = import ./project.nix;
         pkgs = nixpkgs.legacyPackages.${system};
         nativeBuildInputs = with pkgs; [
-          clang-tools
-          clang
+          llvmPackages_latest.clang-tools
+          llvmPackages_latest.clang
           cmake
+          cmake-format
         ];
         buildInputs = with pkgs; [
           pkg-config
@@ -34,6 +35,7 @@
           inherit nativeBuildInputs buildInputs;
           packages = with pkgs; [
             gdb
+            cmake-language-server
           ];
 
           CFLAGS = "-O2 -g";

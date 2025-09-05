@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +92,7 @@ static char* cap_end(cap_t* cap, size_t* out_len) {
             buf   = nb;
             capsz = newsz;
         }
-        int r = READ(cap->rfd, buf + len, 4096);
+        ssize_t r = READ(cap->rfd, buf + len, 4096);
         if (r > 0) {
             len += (size_t)r;
             continue;
@@ -155,7 +156,7 @@ static int test_group_and_fileline(void) {
 
     // Expect: [ERROR], [group name], and this source file's base name
     int ok = contains(out, "[ERROR]") && contains(out, "[group name]") &&
-             (contains(out, "[test_c-log.c:") || contains(out, "[test_c-log.c]"));
+             (contains(out, "<test_c-log.c:") || contains(out, "<test_c-log.c>"));
     free(out);
     return ok ? 0 : 22;
 }
@@ -174,10 +175,10 @@ static int test_timer_line_and_callsite(void) {
     char*  out = cap_end(&cap, &n);
     if (!out) return 31;
 
-    int ok = contains(out, "[DEBUG]") && contains(out, "[timer]") && contains(out, "some label") &&
+    int ok = contains(out, "[DEBUG]") && contains(out, "timer") && contains(out, "some label") &&
              (contains(out, " ns]:") || contains(out, " µs]:") || contains(out, " us]:") || contains(out, " ms]:") ||
               contains(out, " s]:")) &&
-             (contains(out, "[test_c-log.c:") || contains(out, "[test_c-log.c]"));
+             (contains(out, "<test_c-log.c:") || contains(out, "<test_c-log.c>"));
     free(out);
     return ok ? 0 : 32;
 }
