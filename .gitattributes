@@ -1,0 +1,4 @@
+src/c-log.h         linguist-language=C
+examples/**         linguist-vendored
+tests/**            linguist-vendored
+src/c-log-impl.c    linguist-vendored
