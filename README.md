@@ -252,7 +252,7 @@ You can define these macros at compile time (e.g., `-DNAME=value`) **before** in
 
 Prefix format is:
 ```
-YYYY-MM-DD HH:MM:SS.mmm [LEVEL] [file:line] (tid:123) [group?] [build:?] message...
+YYYY-MM-DD HH:MM:SS.mmm [LEVEL] (tid:123) <file:line> [group?] [build:?] message...
 ```
 - `file:line` can be disabled with `CLOG_WITH_LINE=0` (then just `[file]`).
 - Thread id formatting can be short with `CLOG_TID_SHORT=1` → `(t#XXXXXX)`.
@@ -299,19 +299,19 @@ if (fd >= 0) {
 
 **TTY (colorized)**:
 ```
-2025-09-05 10:15:00.123 [INFO]  [main.c:10] (tid:4242) logger ready
-2025-09-05 10:15:00.125 [WARN]  [net.c:88]  (tid:4243) [net] reconnect in 200 ms
-2025-09-05 10:15:00.128 [DEBUG] [load.c:55] (tid:4242) [timer] [472.331 µs]: parse file
+2025-09-05 10:15:00.123 [INFO]  (tid:4242) <main.c:10> logger ready
+2025-09-05 10:15:00.125 [WARN]  (tid:4243) <net.c:88> [net] reconnect in 200 ms
+2025-09-05 10:15:00.128 [DEBUG] (tid:4242) <load.c:55> [timer] [472.331 µs]: parse file
 ```
 
 **Plain (no color)**:
 ```
-2025-09-05 10:15:00.123 [INFO] [main.c:10] (tid:4242) logger ready
+2025-09-05 10:15:00.123 [INFO] (tid:4242) <main.c:10> logger ready
 ```
 
 When a message exceeds `CLOG_LINE_MAX`, it is truncated and tagged:
 ```
-... [TRUNC]
+...
 ```
 
 ---
