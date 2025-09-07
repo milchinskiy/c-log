@@ -34,6 +34,7 @@ else()
     -fno-common
     -Wformat=2
     -Wformat-truncation
+    -Wundef
     -Wshadow
     -Wconversion
     -Wsign-conversion

@@ -83,6 +83,16 @@ extern "C" {
 #    define CLOG_SPIN_ITERS 100  // bounded spin before yielding (only for KIND=1)
 #endif
 
+#define CLOG_LVL_TRACE          0
+#define CLOG_LVL_DEBUG          1
+#define CLOG_LVL_INFO           2
+#define CLOG_LVL_WARN           3
+#define CLOG_LVL_ERROR          4
+#define CLOG_LVL_FATAL          5
+
+#define CLOG_LVL_FROM_TOKEN(x)  CLOG_LVL_FROM_TOKEN_(x)
+#define CLOG_LVL_FROM_TOKEN_(x) CLOG_LVL_##x
+
 // -------- platform ----------
 #if defined(_WIN32)
 #    include <fcntl.h>
@@ -180,23 +190,30 @@ static inline int clog_isatty_fd_(int fd) { return isatty(fd); }
 #endif
 
 // ---------- Levels ----------
-typedef enum { CLOG_TRACE = 0, CLOG_DEBUG, CLOG_INFO, CLOG_WARN, CLOG_ERROR, CLOG_FATAL } clog_level;
+typedef enum {
+    CLOG_TRACE = CLOG_LVL_TRACE,
+    CLOG_DEBUG = CLOG_LVL_DEBUG,
+    CLOG_INFO  = CLOG_LVL_INFO,
+    CLOG_WARN  = CLOG_LVL_WARN,
+    CLOG_ERROR = CLOG_LVL_ERROR,
+    CLOG_FATAL = CLOG_LVL_FATAL,
+} clog_level;
 
 // Runtime default level (initial threshold)
 #ifndef CLOG_DEFAULT_LEVEL
 #    ifdef CLOG_LEVEL
 #        define CLOG_DEFAULT_LEVEL CLOG_LEVEL
 #    else
-#        define CLOG_DEFAULT_LEVEL CLOG_INFO
+#        define CLOG_DEFAULT_LEVEL CLOG_LVL_INFO
 #    endif
 #endif
 
 // Compile-time elision (removes code below this level)
 #ifndef CLOG_COMPILETIME_MIN_LEVEL
 #    ifdef CLOG_MIN_LEVEL
-#        define CLOG_COMPILETIME_MIN_LEVEL CLOG_MIN_LEVEL
+#        define CLOG_COMPILETIME_MIN_LEVEL CLOG_LVL_FROM_TOKEN(CLOG_MIN_LEVEL)
 #    else
-#        define CLOG_COMPILETIME_MIN_LEVEL CLOG_TRACE
+#        define CLOG_COMPILETIME_MIN_LEVEL CLOG_LVL_TRACE
 #    endif
 #endif
 
@@ -221,7 +238,7 @@ void clog_log_file_line_(
 ) CLOG_PRINTF(5, 6);
 void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char *group, const char *fmt, va_list ap);
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_TRACE
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_TRACE
 #    define log_trace(...)          clog_log_file_line_(CLOG_TRACE, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_trace_group(g, ...) clog_log_file_line_(CLOG_TRACE, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -229,7 +246,7 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 #    define log_trace_group(g, ...) ((void)0)
 #endif
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_DEBUG
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_DEBUG
 #    define log_debug(...)          clog_log_file_line_(CLOG_DEBUG, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_debug_group(g, ...) clog_log_file_line_(CLOG_DEBUG, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -237,7 +254,7 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 #    define log_debug_group(g, ...) ((void)0)
 #endif
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_INFO
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_INFO
 #    define log_info(...)          clog_log_file_line_(CLOG_INFO, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_info_group(g, ...) clog_log_file_line_(CLOG_INFO, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -245,7 +262,7 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 #    define log_info_group(g, ...) ((void)0)
 #endif
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_WARN
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_WARN
 #    define log_warn(...)          clog_log_file_line_(CLOG_WARN, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_warn_group(g, ...) clog_log_file_line_(CLOG_WARN, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -253,7 +270,7 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 #    define log_warn_group(g, ...) ((void)0)
 #endif
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_ERROR
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_ERROR
 #    define log_error(...)          clog_log_file_line_(CLOG_ERROR, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_error_group(g, ...) clog_log_file_line_(CLOG_ERROR, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -261,7 +278,7 @@ void clog_vlog_file_line_(clog_level lvl, const char *file, int line, const char
 #    define log_error_group(g, ...) ((void)0)
 #endif
 
-#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_FATAL
+#if CLOG_COMPILETIME_MIN_LEVEL <= CLOG_LVL_FATAL
 #    define log_fatal(...)          clog_log_file_line_(CLOG_FATAL, __FILE__, __LINE__, NULL, __VA_ARGS__)
 #    define log_fatal_group(g, ...) clog_log_file_line_(CLOG_FATAL, __FILE__, __LINE__, (g), __VA_ARGS__)
 #else
@@ -330,30 +347,60 @@ static inline int  clog_fd_load_(void) { return g_fd_load(); }
 static inline void clog_fd_store_(int v) { g_fd_store(v); }
 
 #    if CLOG_THREAD_SAFE
-#        if CLOG_LOCK_KIND == 1        /* Spinlock (bounded) */
-#            if !CLOG_HAVE_ATOMICS
-#                include <stdatomic.h> /* in case user disabled state atomics */
+/* Spinlock (bounded) — requires atomics */
+#        if CLOG_LOCK_KIND == 1
+
+#            ifndef _WIN32
+#                include <sched.h> /* sched_yield */
 #            endif
-#            if !defined(_WIN32)
-#                include <sched.h>
-#            endif
+
+/* C++: use <atomic> and std::atomic_flag */
+#            ifdef __cplusplus
+#                include <atomic>
+static std::atomic_flag g_lock = ATOMIC_FLAG_INIT;
+static inline void      clog_lock_(void) {
+    int spins = 0;
+    while (g_lock.test_and_set(std::memory_order_acquire)) {
+        if (++spins >= CLOG_SPIN_ITERS) {
+            spins = 0;
+#                ifdef _WIN32
+            SwitchToThread();
+#                else
+            sched_yield();
+#                endif
+        }
+    }
+}
+static inline void clog_unlock_(void) { g_lock.clear(std::memory_order_release); }
+
+/* C (C11): use <stdatomic.h> and atomic_flag */
+#            elif !defined(__STDC_NO_ATOMICS__)
+#                include <stdatomic.h>
 static atomic_flag g_lock = ATOMIC_FLAG_INIT;
 static inline void clog_lock_(void) {
     int spins = 0;
     while (atomic_flag_test_and_set_explicit(&g_lock, memory_order_acquire)) {
         if (++spins >= CLOG_SPIN_ITERS) {
             spins = 0;
-#            if defined(_WIN32)
+#                ifdef _WIN32
             SwitchToThread();
-#            else
+#                else
             sched_yield();
-#            endif
+#                endif
         }
     }
 }
 static inline void clog_unlock_(void) { atomic_flag_clear_explicit(&g_lock, memory_order_release); }
-#        elif CLOG_LOCK_KIND == 2 /* Mutex (recommended) */
-#            if defined(_WIN32)
+
+/* No atomics available in C: refuse spinlock to avoid UB */
+#            else
+#                error \
+                    "CLOG_LOCK_KIND=1 requires C++ <atomic> or C11 <stdatomic.h>. Use CLOG_LOCK_KIND=2 (mutex) or build as C++."
+#            endif /* language atomics */
+
+/* Mutex (recommended) */
+#        elif CLOG_LOCK_KIND == 2
+#            ifdef _WIN32
 static SRWLOCK     g_lock = SRWLOCK_INIT;
 static inline void clog_lock_(void) { AcquireSRWLockExclusive(&g_lock); }
 static inline void clog_unlock_(void) { ReleaseSRWLockExclusive(&g_lock); }
@@ -362,14 +409,17 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static inline void     clog_lock_(void) { (void)pthread_mutex_lock(&g_lock); }
 static inline void     clog_unlock_(void) { (void)pthread_mutex_unlock(&g_lock); }
 #            endif
-#        else /* No locking */
+
+/* No locking */
+#        else
 static inline void clog_lock_(void) {}
 static inline void clog_unlock_(void) {}
-#        endif
-#    else
+#        endif /* CLOG_LOCK_KIND */
+
+#    else      /* !CLOG_THREAD_SAFE */
 static inline void clog_lock_(void) {}
 static inline void clog_unlock_(void) {}
-#    endif
+#    endif     /* CLOG_THREAD_SAFE */
 
 // Per-thread scratch (no heap)
 static CLOG_THREADLOCAL char g_buf[CLOG_LINE_MAX];
@@ -624,6 +674,7 @@ void clog_log_file_line_(clog_level lvl, const char *file, int line, const char 
 }
 
 // timers (call-site aware)
+#    if CLOG_TIMERS_MAX > 0
 static inline int clog_timer_find_slot_(uint64_t key) {
     for (int i = 0; i < CLOG_TIMERS_MAX; i++)
         if (g_timers[i].used && g_timers[i].key == key) return i;
@@ -634,6 +685,7 @@ static inline int clog_timer_free_slot_(void) {
         if (!g_timers[i].used) return i;
     return -1;
 }
+#    endif
 
 #    if CLOG_TIMERS_MAX == 0
 /* No-op implementations; keep API stable. */
